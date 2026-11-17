@@ -32,6 +32,14 @@ The sign-in page has one-click buttons for each. All people, places and organiza
 
 Set `ANTHROPIC_API_KEY` before `npm start` and new requests are analyzed by Claude (`claude-opus-5-5` by default, override with `HAVEASK_MODEL`), using structured JSON output. Without a key, or if a call fails, a transparent built-in rule-based analyzer is used, so the demo always works offline. The UI labels which one produced each analysis.
 
+## Deploying
+
+HaveAsk is a long-running Node server: it keeps a SQLite file and runs the care monitor every minute. It needs a host that runs a persistent process, not serverless functions.
+
+- **Render (recommended, free):** in Render choose *New + → Blueprint*, select this repo, and it uses `render.yaml`. On the free plan the instance sleeps when idle, and the demo data reseeds on wake.
+- **Railway / Fly.io / any VPS:** build with `npm install --include=dev && npm run build`, start with `npm start`, and set `PORT` if needed.
+- **Vercel is not supported as-is.** Its serverless functions have no persistent disk or background timer, so logins and requests would vanish between calls.
+
 ## 5-minute demo script
 
 1. **Coordinator dashboard** (`care@`). There are stat tiles (new, unresolved/aging, high urgency, unassigned, active), a red **Needs attention** panel of unresolved-request alerts, each with a recommended next step, and **AI suggestions to review**.
