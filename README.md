@@ -5,52 +5,65 @@ A care & community tool that helps a church notice who needs practical help and 
 > **AI helps surface needs and suggestions. Humans make all care decisions.**
 > AI never contacts members and never assigns volunteers. Every match is approved by a care coordinator.
 
-## Quick start
+## How sign-in and payments work
 
-Requires **Node.js 22.13+** (uses the built-in `node:sqlite`; no native build step).
+- **Sign-in is Privy only** (email or Google). New users are created automatically and pick *ask for help* or *volunteer* on a short welcome screen. Volunteer applications are approved by a coordinator under **People**.
+- **Every user gets a self-custodial embedded wallet** on Base the first time they sign in. The server never holds a private key.
+- **Payments are USDC on Base mainnet (real money).** There are three kinds:
+  - **Financial help:** to the member who made the request.
+  - **Reimbursement:** to a volunteer. The volunteer requests it from their assignment, and a coordinator approves it.
+  - **Payment for service:** to a volunteer.
+- **How a payment is sent:** the coordinator approves it and signs the transfer from their own Privy wallet. The payee's address always comes from the server, never from the browser. A payment is marked **Paid** only after the server verifies on-chain that the exact USDC amount went from the coordinator's wallet to the payee's.
+- **Safety limits:**
+  - each payment is capped (default 500 USDC, editable in Settings)
+  - a transaction hash can't be reused
+  - coordinators can't change their own role
+  - only a pastor/admin can grant care-team roles
+- **Privacy:** on-chain transfers are public. They show wallet addresses and amounts, not names or request details.
 
-```bash
-npm install
-npm run build      # build the web app into dist/
-npm start          # http://localhost:3001  (seeds demo data on first run)
-```
+## Setup
 
-For development with hot reload: `npm run dev` (web on :5173, API on :3001).
+Requires **Node.js 22.13+**.
 
-### Demo accounts (password `demo1234`)
+1. **Create a Privy app** at [dashboard.privy.io](https://dashboard.privy.io):
+   - Enable **Email** and **Google** login.
+   - Under *Embedded wallets*, enable **Ethereum**.
+   - Add your site's domain (for example your Railway URL) under *Allowed domains*.
+   - Optional: enable **gas sponsorship** on Base, then set `HAVEASK_SPONSOR_GAS=true` so coordinators don't need ETH for fees.
+2. Copy `.env.example` and fill in `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, and `HAVEASK_ADMIN_EMAILS` (your email, so you become Pastor/Admin on first sign-in).
+3. Run it:
+   ```bash
+   npm install
+   npm run build
+   npm start          # http://localhost:3001
+   ```
 
-| Role | Email | Use it to |
-|---|---|---|
-| Care Coordinator | `care@haveask.demo` | Dashboard, AI matches, alerts. **Start here.** |
-| Member | `member@haveask.demo` | Submit a private request, see its status |
-| Volunteer | `volunteer@haveask.demo` (or `tom@`, `daniel@`, `ruth@` …) | Accept/decline, post updates |
-| Pastor (admin) | `pastor@haveask.demo` | Receives escalations |
+### Deploy on Railway
 
-The sign-in page has one-click buttons for each. All people, places and organizations are synthetic.
+1. Create a new project from this GitHub repo. `railway.json` sets the build (`npm run build`) and start (`npm start`) commands, and `.node-version` pins Node.
+2. Add the variables from `.env.example` in the service's **Variables** tab.
+3. Add a **Volume** mounted at `/app/data` so the database survives redeploys.
+4. Generate a domain, then add it to Privy's *Allowed domains*.
+5. Sign in with the email you put in `HAVEASK_ADMIN_EMAILS`. You're the Pastor/Admin. Make your care coordinators *Care Coordinator* under **People**.
+6. Fund the coordinator's wallet with USDC (and a little ETH for fees unless gas is sponsored): **Wallet → Add funds**, or send to the address shown.
+
+### Demo mode
+
+Set `HAVEASK_DEMO_DATA=true` to load the synthetic church data and the demo controls (fast-forward clock, reset). Real Privy accounts are kept on reset, and reset is blocked once any real payment exists. Synthetic people have no wallets, so they can't be paid.
+
+For local development without Privy keys you can set `HAVEASK_DEV_LOGIN=true`, which lets you sign in by typing an email. It is ignored when `NODE_ENV=production` and must never be used on a live server.
 
 ### Optional: Claude for request analysis
 
-Set `ANTHROPIC_API_KEY` before `npm start` and new requests are analyzed by Claude (`claude-opus-5-5` by default, override with `HAVEASK_MODEL`), using structured JSON output. Without a key, or if a call fails, a transparent built-in rule-based analyzer is used, so the demo always works offline. The UI labels which one produced each analysis.
+Set `ANTHROPIC_API_KEY` and new requests are analyzed by Claude (`claude-opus-5-5` by default, override with `HAVEASK_MODEL`). Without it, a built-in rule-based analyzer is used.
 
-## Deploying
+## Walkthrough
 
-HaveAsk is a long-running Node server: it keeps a SQLite file and runs the care monitor every minute. It needs a host that runs a persistent process, not serverless functions.
-
-- **Render (recommended, free):** in Render choose *New + → Blueprint*, select this repo, and it uses `render.yaml`. On the free plan the instance sleeps when idle, and the demo data reseeds on wake.
-- **Railway / Fly.io / any VPS:** build with `npm install --include=dev && npm run build`, start with `npm start`, and set `PORT` if needed.
-- **Vercel is not supported as-is.** Its serverless functions have no persistent disk or background timer, so logins and requests would vanish between calls.
-
-## 5-minute demo script
-
-1. **Coordinator dashboard** (`care@`). There are stat tiles (new, unresolved/aging, high urgency, unassigned, active), a red **Needs attention** panel of unresolved-request alerts, each with a recommended next step, and **AI suggestions to review**.
-2. **Member asks for help** (`member@`, in a second browser window). Go to *Ask for help*, pick a type, describe the need, choose urgency and contact method, then *Send request privately*. A confirmation appears and the status page shows Received → In progress → Resolved.
-3. **AI categorizes and suggests.** Back as the coordinator, open the new request (also in the bell notifications). The **AI analysis** panel shows categories, key needs, urgency signals and suggested urgency. **Suggested matches** shows 2–3 volunteers plus a community resource, each with a confidence score and the reasons (skills, availability, current load, distance).
-4. **Human approval.** Click *Approve & send*. You can edit exactly what the volunteer will see (need-to-know only) before notifying them.
-5. **Volunteer receives it** (`tom@` or whoever you chose; works well at phone width). Before accepting they see only the brief. After *Accept* they see the member's words and contact details. They can post updates such as *Contacted*, *Helping*, *Needs more support* or *Completed*.
-6. **The system flags it.** As the coordinator, open *Settings & demo* and click *Fast-forward 3 days*. The monitor raises **"No progress update from volunteer"** (and **"Member hasn't heard from anyone"** if no contact was logged) with a recommendation like *Check in with Tom*. The volunteer gets one gentle reminder.
-7. **Close the loop.** Log contact or have the volunteer post an update, and the alerts clear automatically. *Mark resolved*, and the member gets one optional "Was the help useful?" check-in.
-
-*Reset demo data* in Settings restores everything.
+1. **Member** signs in, chooses *Ask for help*, and submits a private request.
+2. **Coordinator** sees it on the dashboard with the AI analysis and suggested volunteers, then approves a match.
+3. **Volunteer** accepts and posts updates. If they spend money, they tap *Request reimbursement*.
+4. **Coordinator** approves the reimbursement under **Payments**, or sends financial help from the request page (*Send payment*), and signs it in their wallet. It shows as **Paid** once confirmed on Base, and the recipient is notified.
+5. If anything goes quiet, the **care monitor** raises an alert with a recommended next step.
 
 ## Features
 
@@ -70,6 +83,7 @@ HaveAsk is a long-running Node server: it keeps a SQLite file and runs the care 
   - possible safeguarding concern
 
   Alerts carry a summary and recommended action, can be acknowledged, snoozed or dismissed, and clear automatically once the condition is resolved. Thresholds are editable in Settings.
+- **Payments.** USDC on Base from the coordinator's wallet to a member or volunteer, verified on-chain, with a full ledger under *Payments* and a personal *Wallet* page for everyone.
 - **Gentle reminders.** Volunteers get at most one reminder per assignment per cooldown window (default 3 days). Coordinators are notified when an alert is raised. Members get one optional check-in after resolution.
 
 ## Project layout
@@ -77,21 +91,25 @@ HaveAsk is a long-running Node server: it keeps a SQLite file and runs the care 
 ```
 server/
   index.js      Express app, static hosting of dist/
+  config.js     environment configuration (Privy, chain, demo mode)
+  privy.js      Privy access-token verification + profile/wallet lookup
+  chain.js      Base JSON-RPC: balances and USDC transfer verification
+  payments.js   payments ledger and rules
   db.js         SQLite schema + settings (node:sqlite)
-  auth.js       scrypt passwords, HttpOnly session cookie, role guards
+  auth.js       HttpOnly session cookie, role guards
   ai.js         Claude analyzer, rule-based fallback, explainable matching
   services.js   care actions (create, assign, respond, update, resolve)
   monitor.js    unresolved-request detection + reminders
   routes.js     REST API (member / volunteer / care)
   seed.js       synthetic demo data
   tests/        node:test suite (npm test)
-web/src/        React app (Vite), plain CSS
+web/src/        React app (Vite), plain CSS; wallet.jsx is the only file that talks to Privy
 ```
 
 Data lives in `data/haveask.db` (gitignored). Delete it, or use *Reset demo data*, to start fresh.
 
-## Prototype notes
+## Notes
 
-- Uses synthetic data only. Don't enter real personal information.
-- Authentication is email/password with server-side sessions, which is fine for a demo. Production would need HTTPS, CSRF protection, rate limiting and audit logging.
-- The demo clock (fast-forward) shifts "now" for the whole app and is meant for demos only.
+- Payments move real funds and cannot be reversed. Test with small amounts first, or set `HAVEASK_CHAIN=base-sepolia` to use testnet USDC.
+- The public Base RPC is rate-limited. For production, set `BASE_RPC_URL` to a dedicated provider.
+- Sessions are server-side HttpOnly cookies issued after verifying a Privy access token. Before handling real money at scale, add HTTPS-only cookies, CSRF protection, rate limiting and an audit export.

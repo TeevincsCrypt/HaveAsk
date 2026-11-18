@@ -4,6 +4,7 @@ import { post } from '../../api.js';
 import { useApp, useData } from '../../context.js';
 import { fmtDate, relTime, initials } from '../../format.js';
 import { AlertItem } from '../../components/care.jsx';
+import { PaymentRow, SendPaymentModal, usePay } from '../../components/payments.jsx';
 import {
   AIBadge, AssignmentStatus, Category, Confidence, Empty, Icon, Loading, LoadMeter, Modal, Status, Urgency, useToast,
 } from '../../components/ui.jsx';
@@ -20,10 +21,17 @@ export default function CareRequestDetail() {
   const [noteText, setNoteText] = useState('');
   const [manualId, setManualId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const { pay, busyId } = usePay();
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <Empty icon="🔍" title="Request not found" action={<Link className="btn" to="/care/requests">Back to requests</Link>} />;
-  const { request: r, suggestions, assignments, notes, activity, alerts, feedback, volunteers } = data;
+  const { request: r, suggestions, assignments, notes, activity, alerts, feedback, volunteers, payments = [], member_has_wallet } = data;
+  const payees = [
+    { id: r.member_id, label: `${r.member_name} (member) — financial help`, kind: 'financial_help', wallet: member_has_wallet },
+    ...[...new Map(assignments.filter((a) => ['accepted', 'contacted', 'helping', 'needs_support', 'completed'].includes(a.status))
+      .map((a) => [a.volunteer_id, { id: a.volunteer_id, label: `${a.volunteer_name} (volunteer)`, kind: 'reimbursement', wallet: !!a.volunteer_has_wallet }])).values()],
+  ];
   const ai = r.ai || {};
   const open = ['pending', 'in_progress'].includes(r.status);
   const active = assignments.find((a) => ['offered', 'accepted', 'contacted', 'helping', 'needs_support'].includes(a.status));
@@ -181,6 +189,21 @@ export default function CareRequestDetail() {
           </section>
 
           <section className="card">
+            <div className="card-head">
+              <div><h2>Payments</h2><p>USDC to the member or a volunteer. Approved and signed by you.</p></div>
+              <button className="btn sm" onClick={() => setPaying(true)}><Icon name="wallet" size={14} />Send payment</button>
+            </div>
+            <div className="card-body">
+              {payments.length === 0 ? <p className="small muted">No payments on this request.</p> : payments.map((p) => (
+                <PaymentRow key={p.id} p={p} actions={
+                  p.status === 'requested' ? <button className="btn sm" onClick={() => act(() => post(`/care/payments/${p.id}/approve`), 'Approved. Now sign it to send.')}>Approve</button>
+                  : (p.status === 'approved' || p.status === 'failed') ? <button className="btn primary sm" disabled={busyId === p.id} onClick={() => pay(p)}>{busyId === p.id ? 'Sending…' : 'Sign & send'}</button>
+                  : null} />
+              ))}
+            </div>
+          </section>
+
+          <section className="card">
             <div className="card-head"><h2>Assignments</h2></div>
             <div className="card-body stack-sm">
               {assignments.length === 0 ? <p className="small muted">No volunteer has been asked yet.</p> : assignments.map((a) => (
@@ -280,6 +303,8 @@ export default function CareRequestDetail() {
           </div>
         </Modal>
       )}
+
+      {paying && <SendPaymentModal request={r} payees={payees} onClose={() => { setPaying(false); reload(); }} />}
 
       {modal && (
         <Modal

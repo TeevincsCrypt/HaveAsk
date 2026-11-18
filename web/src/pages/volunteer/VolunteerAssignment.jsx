@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { post } from '../../api.js';
 import { useApp, useData } from '../../context.js';
 import { relTime } from '../../format.js';
+import { PaymentRow } from '../../components/payments.jsx';
 import { AssignmentStatus, Category, Empty, Icon, Loading, Modal, Urgency, useToast } from '../../components/ui.jsx';
 
 const STATUS_OPTS = [
@@ -22,10 +23,12 @@ export default function VolunteerAssignment() {
   const [status, setStatus] = useState('');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [reimb, setReimb] = useState(null);
 
   if (loading && !data) return <Loading />;
   if (error && !data) return <Empty icon="🔍" title="Assignment not found" action={<Link className="btn" to="/volunteer">Back</Link>} />;
-  const { assignment: a, updates } = data;
+  const { assignment: a, updates, payments = [] } = data;
+  const canReimburse = ['accepted', 'contacted', 'helping', 'needs_support', 'completed'].includes(a.status);
   const act = async (fn, msg) => { setBusy(true); try { await fn(); toast(msg); reload(); bump(); } catch (e) { toast(e.message); } finally { setBusy(false); } };
   const isActive = ['accepted', 'contacted', 'helping', 'needs_support'].includes(a.status);
 
@@ -94,6 +97,30 @@ export default function VolunteerAssignment() {
             </button>
           </div>
         </div>
+      )}
+
+      {canReimburse && (
+        <div className="card">
+          <div className="card-head">
+            <div><h2>Reimbursements</h2><p>Spent your own money helping? Ask to be paid back to your HaveAsk wallet.</p></div>
+            <button className="btn sm" onClick={() => setReimb({ amount: '', note: '' })}><Icon name="wallet" size={14} />Request reimbursement</button>
+          </div>
+          <div className="card-body">
+            {payments.length === 0 ? <p className="small muted">No reimbursements requested.</p> : payments.map((p) => <PaymentRow key={p.id} p={p} showPayee={false} />)}
+          </div>
+        </div>
+      )}
+
+      {reimb && (
+        <Modal title="Request reimbursement" onClose={() => setReimb(null)}
+          footer={<><button className="btn ghost" onClick={() => setReimb(null)}>Cancel</button>
+            <button className="btn primary" disabled={busy || !(Number(reimb.amount) > 0) || !reimb.note.trim()} onClick={() => act(async () => { await post(`/vol/assignments/${id}/reimbursements`, reimb); setReimb(null); }, 'Sent to the coordinator for approval.')}>Send request</button></>}>
+          <div className="stack">
+            <div className="field"><label>Amount (USDC ≈ US$)</label><input className="input" type="number" min="0.01" step="0.01" value={reimb.amount} onChange={(e) => setReimb({ ...reimb, amount: e.target.value })} placeholder="0.00" autoFocus /></div>
+            <div className="field"><label>What was it for?</label><input className="input" value={reimb.note} onChange={(e) => setReimb({ ...reimb, note: e.target.value })} placeholder="e.g. Fuel for two hospital trips" /></div>
+            <p className="tiny faint">The coordinator reviews every request. Once approved and sent, it arrives in your wallet.</p>
+          </div>
+        </Modal>
       )}
 
       {updates.length > 0 && (

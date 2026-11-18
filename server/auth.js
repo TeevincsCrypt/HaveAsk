@@ -15,6 +15,8 @@ export function verifyPassword(pw, stored) {
 }
 
 const COOKIE = 'haveask_session';
+// Secure cookies whenever we're deployed (Railway sets RAILWAY_ENVIRONMENT; most hosts set NODE_ENV=production).
+const SECURE = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT ? '; Secure' : '';
 
 function parseCookies(header = '') {
   const out = {};
@@ -28,18 +30,18 @@ function parseCookies(header = '') {
 export function createSession(res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
   run('INSERT INTO sessions(token, user_id, created_at) VALUES (?,?,?)', token, userId, Date.now());
-  res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 14}`);
+  res.setHeader('Set-Cookie', `${COOKIE}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 14}${SECURE}`);
 }
 export function destroySession(req, res) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   if (token) run('DELETE FROM sessions WHERE token = ?', token);
-  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`);
+  res.setHeader('Set-Cookie', `${COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0${SECURE}`);
 }
 
 export function loadUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE];
   req.user = token
-    ? get('SELECT u.id, u.name, u.email, u.role, u.phone, u.area FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', token) || null
+    ? get('SELECT u.id, u.name, u.email, u.role, u.phone, u.area, u.wallet_address, u.onboarded, u.volunteer_status, u.privy_id FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?', token) || null
     : null;
   next();
 }

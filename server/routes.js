@@ -1,11 +1,17 @@
 import express from 'express';
 import { all, get, run, json, tx, getSettings, setSetting, DEFAULT_SETTINGS } from './db.js';
 import { now, DAY } from './clock.js';
-import { hashPassword, verifyPassword, createSession, destroySession, requireRole, isCare } from './auth.js';
+import { createSession, destroySession, requireRole, isCare } from './auth.js';
+import { CHAIN, DEMO_MODE, DEV_LOGIN, ADMIN_EMAILS, PRIVY_APP_ID, SPONSOR_GAS, privyConfigured } from './config.js';
+import { verifyPrivyToken, getPrivyProfile } from './privy.js';
+import { getBalances } from './chain.js';
+import {
+  createPayment, requestReimbursement, reviewReimbursement, cancelPayment, submitPayment, verifyPayment, paymentView,
+} from './payments.js';
 import { CATEGORIES, CONTACT_METHODS, AREAS, DAYS, ACTIVE_ASSIGNMENT, ASSIGNMENT_LABELS } from './constants.js';
 import {
   createRequest, assignVolunteer, respondToAssignment, updateAssignmentStatus, resolveRequest,
-  logActivity, touchRequest, notifyCareTeam, storeSuggestions, activeAssignment, httpError, VOLUNTEER_STATUSES,
+  logActivity, touchRequest, notify, notifyCareTeam, storeSuggestions, activeAssignment, httpError, VOLUNTEER_STATUSES,
 } from './services.js';
 import { analyzeRequest, aiMode } from './ai.js';
 import { runMonitor, RULES } from './monitor.js';
@@ -22,30 +28,87 @@ api.get('/meta', (req, res) => {
     categories: CATEGORIES, contactMethods: CONTACT_METHODS, areas: Object.keys(AREAS), days: DAYS,
     assignmentLabels: ASSIGNMENT_LABELS, rules: RULES, aiMode: aiMode(),
     now: now(), clockOffsetMs: s.clock_offset_ms,
+    privyAppId: PRIVY_APP_ID || null, signInReady: privyConfigured() || DEV_LOGIN, devLogin: DEV_LOGIN, demoMode: DEMO_MODE,
+    chain: { id: CHAIN.id, key: CHAIN.key, name: CHAIN.name, usdc: CHAIN.usdc, explorer: CHAIN.explorer }, paymentMaxUsdc: s.payment_max_usdc, sponsorGas: SPONSOR_GAS,
   });
 });
 
-api.get('/me', (req, res) => res.json({ user: req.user }));
+api.get('/me', (req, res) => res.json({ user: req.user ? publicUser(get('SELECT * FROM users WHERE id = ?', req.user.id)) : null }));
 
-api.post('/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  const u = get('SELECT * FROM users WHERE email = ?', String(email || '').trim().toLowerCase());
-  if (!u || !verifyPassword(String(password || ''), u.password_hash)) return res.status(401).json({ error: 'That email and password don’t match our records.' });
+const publicUser = (u) => u && ({
+  id: u.id, name: u.name, email: u.email, role: u.role, area: u.area, phone: u.phone,
+  wallet_address: u.wallet_address, onboarded: !!u.onboarded, volunteer_status: u.volunteer_status,
+});
+
+/** Find or create the local account for a verified identity. Existing accounts are matched by Privy id, then email. */
+function upsertIdentity({ privyId = null, email, name, walletAddress }) {
+  const t = now();
+  let u = (privyId && get('SELECT * FROM users WHERE privy_id = ?', privyId)) || (email && get('SELECT * FROM users WHERE email = ?', email));
+  if (!u) {
+    if (!email) throw httpError(400, 'Please sign in with an email address or Google so the care team can reach you.');
+    const r = run("INSERT INTO users(name, email, password_hash, role, privy_id, wallet_address, onboarded, created_at) VALUES (?,?, '!', 'member', ?, ?, 0, ?)",
+      name || email.split('@')[0], email, privyId, walletAddress || null, t);
+    u = get('SELECT * FROM users WHERE id = ?', Number(r.lastInsertRowid));
+  } else {
+    run('UPDATE users SET privy_id = COALESCE(privy_id, ?), wallet_address = COALESCE(?, wallet_address) WHERE id = ?', privyId, walletAddress || null, u.id);
+  }
+  if (email && ADMIN_EMAILS.includes(email) && u.role !== 'admin') run("UPDATE users SET role = 'admin' WHERE id = ?", u.id);
+  return get('SELECT * FROM users WHERE id = ?', u.id);
+}
+
+api.post('/auth/privy', wrap(async (req, res) => {
+  const privyId = await verifyPrivyToken(req.body?.access_token);
+  const profile = await getPrivyProfile(privyId);
+  const u = upsertIdentity({ privyId, ...profile });
   createSession(res, u.id);
-  res.json({ user: { id: u.id, name: u.name, email: u.email, role: u.role, area: u.area } });
+  res.json({ user: publicUser(u) });
+}));
+
+if (DEV_LOGIN) {
+  console.warn('[auth] HAVEASK_DEV_LOGIN is on: anyone can sign in as any email. Never use this in production.');
+  api.post('/auth/dev', (req, res) => {
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: 'Enter an email address.' });
+    const u = upsertIdentity({ email, walletAddress: null });
+    createSession(res, u.id);
+    res.json({ user: publicUser(u) });
+  });
+}
+
+const signedIn = (req, res, next) => (req.user ? next() : res.status(401).json({ error: 'Please sign in.' }));
+
+api.post('/me/onboard', signedIn, (req, res) => {
+  const { name, area, phone, intent } = req.body || {};
+  if (!String(name || '').trim()) return res.status(400).json({ error: 'Please tell us your name.' });
+  run('UPDATE users SET name = ?, area = ?, phone = ?, onboarded = 1 WHERE id = ?',
+    String(name).trim().slice(0, 80), AREAS[area] ? area : null, String(phone || '').trim().slice(0, 40) || null, req.user.id);
+  if (intent === 'volunteer' && req.user.role === 'member') {
+    run("UPDATE users SET volunteer_status = 'applied' WHERE id = ?", req.user.id);
+    notifyCareTeam({ type: 'volunteer_application', title: `${String(name).trim()} would like to volunteer`, body: 'Review their application in People.', link: '/care/people' });
+  }
+  res.json({ user: publicUser(get('SELECT * FROM users WHERE id = ?', req.user.id)) });
 });
 
-api.post('/auth/signup', (req, res) => {
-  const { name, email, password, area } = req.body || {};
-  const e = String(email || '').trim().toLowerCase();
-  if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(e) || String(password || '').length < 8)
-    return res.status(400).json({ error: 'Please enter your name, a valid email, and a password of at least 8 characters.' });
-  if (get('SELECT id FROM users WHERE email = ?', e)) return res.status(409).json({ error: 'An account with that email already exists.' });
-  const r = run("INSERT INTO users(name, email, password_hash, role, area, created_at) VALUES (?,?,?, 'member', ?, ?)",
-    name.trim(), e, hashPassword(password), AREAS[area] ? area : null, now());
-  createSession(res, Number(r.lastInsertRowid));
-  res.json({ user: { id: Number(r.lastInsertRowid), name: name.trim(), email: e, role: 'member', area } });
-});
+/** Re-read the embedded wallet from Privy (it is created just after first sign-in). Never trusts a browser-supplied address. */
+api.post('/me/wallet/sync', signedIn, wrap(async (req, res) => {
+  if (req.user.privy_id) {
+    const { walletAddress } = await getPrivyProfile(req.user.privy_id);
+    if (walletAddress) run('UPDATE users SET wallet_address = ? WHERE id = ?', walletAddress, req.user.id);
+  }
+  res.json({ user: publicUser(get('SELECT * FROM users WHERE id = ?', req.user.id)) });
+}));
+
+api.get('/me/wallet', signedIn, wrap(async (req, res) => {
+  const address = get('SELECT wallet_address FROM users WHERE id = ?', req.user.id).wallet_address;
+  let balances = null;
+  try { balances = address ? await getBalances(address) : null; } catch (e) { console.warn('[wallet] balance lookup failed:', e.message); }
+  const payments = all(`SELECT * FROM payments WHERE (payee_id = ? AND status IN ('submitted','confirmed')) OR (requested_by = ? AND kind = 'reimbursement') ORDER BY created_at DESC LIMIT 100`, req.user.id, req.user.id)
+    .map(paymentView);
+  const sent = isCare(req.user)
+    ? all("SELECT * FROM payments WHERE approved_by = ? AND status IN ('submitted','confirmed') ORDER BY created_at DESC LIMIT 50", req.user.id).map(paymentView)
+    : [];
+  res.json({ address, balances, payments, sent, chain: { name: CHAIN.name, explorer: CHAIN.explorer } });
+}));
 
 api.post('/auth/logout', (req, res) => { destroySession(req, res); res.json({ ok: true }); });
 
@@ -169,7 +232,8 @@ api.get('/vol/assignments/:id', requireRole('volunteer'), (req, res) => {
   if (!a) return res.status(404).json({ error: 'Assignment not found.' });
   const updates = all(`SELECT message, created_at FROM activity WHERE request_id = ? AND actor_id = ? AND type IN ('accepted','volunteer_update') AND created_at >= ? ORDER BY created_at`,
     a.request_id, req.user.id, a.created_at);
-  res.json({ assignment: volunteerView(a, true), updates, statuses: VOLUNTEER_STATUSES });
+  const payments = all('SELECT * FROM payments WHERE assignment_id = ? AND payee_id = ? ORDER BY created_at DESC', a.id, req.user.id).map(paymentView);
+  res.json({ assignment: volunteerView(a, true), updates, statuses: VOLUNTEER_STATUSES, payments });
 });
 
 api.post('/vol/assignments/:id/respond', requireRole('volunteer'), (req, res) => {
@@ -184,6 +248,11 @@ api.post('/vol/assignments/:id/status', requireRole('volunteer'), (req, res) => 
   updateAssignmentStatus(id(req.params.id), req.user.id, status, String(note || '').trim().slice(0, 1000));
   runMonitor();
   res.json({ ok: true });
+});
+
+api.post('/vol/assignments/:id/reimbursements', requireRole('volunteer'), (req, res) => {
+  const pid = requestReimbursement({ assignmentId: id(req.params.id), volunteerId: req.user.id, amount: req.body?.amount, note: req.body?.note });
+  res.json({ payment: paymentView(get('SELECT * FROM payments WHERE id = ?', pid)) });
 });
 
 api.get('/vol/profile', requireRole('volunteer'), (req, res) => {
@@ -215,7 +284,7 @@ function requestRow(r, t) {
   const alerts = all("SELECT id, rule, severity FROM alerts WHERE request_id = ? AND status IN ('open','acknowledged')", r.id);
   const sugg = get("SELECT COUNT(*) AS n FROM suggestions WHERE request_id = ? AND status = 'suggested'", r.id).n;
   return {
-    id: r.id, member_name: r.member_name, category: r.category, categories: ai.categories || [r.category],
+    id: r.id, member_id: r.member_id, member_name: r.member_name, category: r.category, categories: ai.categories || [r.category],
     summary: ai.summary || r.description.slice(0, 120), urgency: r.urgency, ai_urgency: ai.suggested_urgency || r.urgency,
     safeguarding: !!ai.safeguarding, status: r.status, escalated: !!r.escalated, area: r.area,
     created_at: r.created_at, last_activity_at: r.last_activity_at, age_days: (t - r.created_at) / DAY,
@@ -291,7 +360,7 @@ care.get('/requests/:id', (req, res) => {
     FROM suggestions s LEFT JOIN users u ON u.id = s.volunteer_id LEFT JOIN volunteers v ON v.user_id = s.volunteer_id
     LEFT JOIN resources res ON res.id = s.resource_id
     WHERE s.request_id = ? ORDER BY s.kind DESC, s.score DESC`, ...ACTIVE_ASSIGNMENT, r.id).map((s) => ({ ...s, reasons: json(s.reasons, []) }));
-  const assignments = all(`SELECT a.*, u.name AS volunteer_name, u.phone AS volunteer_phone FROM assignments a JOIN users u ON u.id = a.volunteer_id
+  const assignments = all(`SELECT a.*, u.name AS volunteer_name, u.phone AS volunteer_phone, u.wallet_address IS NOT NULL AS volunteer_has_wallet FROM assignments a JOIN users u ON u.id = a.volunteer_id
     WHERE a.request_id = ? ORDER BY a.created_at DESC`, r.id).map((a) => ({ ...a, label: ASSIGNMENT_LABELS[a.status] }));
   const notes = all('SELECT n.*, u.name AS author_name, u.role AS author_role FROM notes n JOIN users u ON u.id = n.author_id WHERE n.request_id = ? ORDER BY n.created_at DESC', r.id);
   const activity = all('SELECT a.*, u.name AS actor_name FROM activity a LEFT JOIN users u ON u.id = a.actor_id WHERE a.request_id = ? ORDER BY a.created_at DESC, a.id DESC', r.id);
@@ -302,6 +371,8 @@ care.get('/requests/:id', (req, res) => {
       followup_availability: r.followup_availability, member_email: r.member_email, member_phone: r.member_phone,
       last_member_contact_at: r.last_member_contact_at, resolved_at: r.resolved_at, ai: json(r.ai, {}), ai_source: r.ai_source },
     suggestions, assignments, notes, activity, alerts, feedback, volunteers: volunteerList(),
+    payments: all('SELECT * FROM payments WHERE request_id = ? ORDER BY created_at DESC', r.id).map(paymentView),
+    member_has_wallet: !!get('SELECT wallet_address FROM users WHERE id = ?', r.member_id)?.wallet_address,
   });
 });
 
@@ -438,11 +509,11 @@ care.get('/resources', (req, res) => {
 care.get('/settings', (req, res) => res.json({ settings: getSettings(), defaults: DEFAULT_SETTINGS }));
 
 care.put('/settings', (req, res) => {
-  const allowed = ['stale_days', 'volunteer_silent_days', 'high_urgency_unassigned_hours', 'member_followup_days', 'offer_response_hours', 'reminder_cooldown_days'];
+  const allowed = ['payment_max_usdc', 'stale_days', 'volunteer_silent_days', 'high_urgency_unassigned_hours', 'member_followup_days', 'offer_response_hours', 'reminder_cooldown_days'];
   for (const k of allowed) {
     if (req.body?.[k] != null) {
       const v = Number(req.body[k]);
-      if (!Number.isFinite(v) || v <= 0 || v > 90) return res.status(400).json({ error: `Invalid value for ${k}.` });
+      if (!Number.isFinite(v) || v <= 0 || v > (k === 'payment_max_usdc' ? 100000 : 90)) return res.status(400).json({ error: `Invalid value for ${k}.` });
       setSetting(k, v);
     }
   }
@@ -452,7 +523,9 @@ care.put('/settings', (req, res) => {
 
 care.post('/monitor/run', (req, res) => res.json({ stats: runMonitor() }));
 
-care.post('/demo/advance', (req, res) => {
+const demoOnly = (req, res, next) => (DEMO_MODE ? next() : res.status(404).json({ error: 'Demo controls are turned off on this server.' }));
+
+care.post('/demo/advance', demoOnly, (req, res) => {
   const days = Math.min(14, Math.max(0.25, Number(req.body?.days) || 1));
   const s = getSettings();
   setSetting('clock_offset_ms', s.clock_offset_ms + days * DAY);
@@ -460,7 +533,9 @@ care.post('/demo/advance', (req, res) => {
   res.json({ ok: true, now: now(), stats });
 });
 
-care.post('/demo/reset', wrap(async (req, res) => {
+care.post('/demo/reset', demoOnly, wrap(async (req, res) => {
+  if (get("SELECT id FROM payments WHERE status IN ('submitted','confirmed') LIMIT 1"))
+    return res.status(400).json({ error: 'This server has real payment records, so demo data can’t be reset.' });
   const email = req.user.email;
   const { seed } = await import('./seed.js');
   await seed({ quiet: true });
@@ -468,3 +543,58 @@ care.post('/demo/reset', wrap(async (req, res) => {
   if (u) createSession(res, u.id); // keep the presenter signed in after a reset
   res.json({ ok: true });
 }));
+
+// ------------------------------------------------------------------ payments (care team)
+care.post('/requests/:id/payments', (req, res) => {
+  const b = req.body || {};
+  const pid = createPayment({ requestId: id(req.params.id), payeeId: id(b.payee_id), kind: b.kind, amount: b.amount, note: b.note, coordinatorId: req.user.id });
+  res.json({ payment: paymentView(get('SELECT * FROM payments WHERE id = ?', pid)) });
+});
+
+care.get('/payments', (req, res) => {
+  const rows = all(`SELECT p.*, r.category FROM payments p LEFT JOIN requests r ON r.id = p.request_id ORDER BY
+    CASE p.status WHEN 'requested' THEN 0 WHEN 'approved' THEN 1 WHEN 'failed' THEN 2 WHEN 'submitted' THEN 3 ELSE 4 END, p.created_at DESC LIMIT 300`);
+  const totals = get("SELECT COALESCE(SUM(amount_micro),0) AS paid, COUNT(*) AS n FROM payments WHERE status = 'confirmed'");
+  res.json({ payments: rows.map((p) => ({ ...paymentView(p), category: p.category })), totals: { paid: totals.paid / 1e6, count: totals.n } });
+});
+
+care.post('/payments/:id/approve', (req, res) => { reviewReimbursement(id(req.params.id), req.user.id, true); res.json({ payment: paymentView(get('SELECT * FROM payments WHERE id = ?', id(req.params.id))) }); });
+care.post('/payments/:id/decline', (req, res) => { reviewReimbursement(id(req.params.id), req.user.id, false, String(req.body?.reason || '').slice(0, 300)); res.json({ ok: true }); });
+care.post('/payments/:id/cancel', (req, res) => { cancelPayment(id(req.params.id), req.user.id); res.json({ ok: true }); });
+care.post('/payments/:id/submitted', wrap(async (req, res) => {
+  const p = await submitPayment(id(req.params.id), req.user, String(req.body?.tx_hash || ''));
+  res.json({ payment: paymentView(p) });
+}));
+care.post('/payments/:id/verify', wrap(async (req, res) => res.json({ payment: paymentView(await verifyPayment(id(req.params.id))) })));
+
+// ------------------------------------------------------------------ people & roles
+care.get('/people', (req, res) => {
+  const people = all(`SELECT id, name, email, role, area, phone, wallet_address, volunteer_status, onboarded, created_at, privy_id IS NOT NULL AS has_login
+    FROM users ORDER BY CASE WHEN volunteer_status = 'applied' THEN 0 ELSE 1 END, CASE role WHEN 'admin' THEN 0 WHEN 'coordinator' THEN 1 WHEN 'volunteer' THEN 2 ELSE 3 END, name`);
+  res.json({ people: people.map((p) => ({ ...p, has_login: !!p.has_login, onboarded: !!p.onboarded })) });
+});
+
+care.post('/people/:id/role', (req, res) => {
+  const target = get('SELECT * FROM users WHERE id = ?', id(req.params.id));
+  if (!target) throw httpError(404, 'Person not found.');
+  const role = req.body?.role;
+  if (!['member', 'volunteer', 'coordinator', 'admin'].includes(role)) throw httpError(400, 'Unknown role.');
+  const elevated = (r) => r === 'coordinator' || r === 'admin';
+  if ((elevated(role) || elevated(target.role)) && req.user.role !== 'admin') throw httpError(403, 'Only a pastor/admin can change care-team roles.');
+  if (target.id === req.user.id && role !== req.user.role) throw httpError(400, 'You can’t change your own role.');
+  tx(() => {
+    run('UPDATE users SET role = ?, volunteer_status = NULL WHERE id = ?', role, target.id);
+    if (role === 'volunteer' && !get('SELECT user_id FROM volunteers WHERE user_id = ?', target.id)) {
+      run("INSERT INTO volunteers(user_id, skills, availability_days, max_load) VALUES (?, '[]', '[]', 2)", target.id);
+    }
+    if (role === 'volunteer' && target.role !== 'volunteer') {
+      notify(target.id, { type: 'role', title: 'Welcome to the care team!', body: 'You’re now a HaveAsk volunteer. Please set your skills and availability in your profile.', link: '/volunteer/profile' });
+    }
+  });
+  res.json({ ok: true });
+});
+
+care.post('/people/:id/decline-volunteer', (req, res) => {
+  run("UPDATE users SET volunteer_status = NULL WHERE id = ?", id(req.params.id));
+  res.json({ ok: true });
+});

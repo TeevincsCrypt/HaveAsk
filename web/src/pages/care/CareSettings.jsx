@@ -5,6 +5,7 @@ import { fmtDate } from '../../format.js';
 import { Icon, Loading, Modal, useToast } from '../../components/ui.jsx';
 
 const FIELDS = [
+  ['payment_max_usdc', 'Largest single payment', 'USDC'],
   ['high_urgency_unassigned_hours', 'High-urgency request with no volunteer', 'hours'],
   ['offer_response_hours', 'Volunteer hasn’t accepted or declined', 'hours'],
   ['volunteer_silent_days', 'Accepted, but no progress update', 'days'],
@@ -35,10 +36,10 @@ export default function CareSettings() {
 
   return (
     <div className="stack" style={{ gap: 20 }}>
-      <div className="page-head" style={{ marginBottom: 0 }}><div><h1>Settings & demo controls</h1><p>Tune when the care monitor raises an alert.</p></div></div>
+      <div className="page-head" style={{ marginBottom: 0 }}><div><h1>Settings</h1><p>Tune when the care monitor raises an alert, and payment limits.</p></div></div>
 
       <section className="card">
-        <div className="card-head"><div><h2>Unresolved-request thresholds</h2><p>Alerts appear on the dashboard when a request crosses one of these lines.</p></div></div>
+        <div className="card-head"><div><h2>Thresholds & limits</h2><p>Alerts appear on the dashboard when a request crosses one of these lines.</p></div></div>
         <div className="card-body stack">
           {FIELDS.map(([k, l, unit]) => (
             <div key={k} className="spread">
@@ -53,7 +54,7 @@ export default function CareSettings() {
         </div>
       </section>
 
-      <section className="card">
+      {meta.demoMode && <section className="card">
         <div className="card-head"><div><h2 className="row" style={{ gap: 8 }}><Icon name="clock" />Demo controls</h2><p>Simulate time passing to show the monitor flagging requests that go quiet.</p></div></div>
         <div className="card-body stack">
           <div className="small">Demo clock: <b>{fmtDate(now)}</b>{meta.clockOffsetMs ? ` (${Math.round(meta.clockOffsetMs / 8.64e6) / 10} days ahead of real time)` : ' (real time)'}</div>
@@ -67,6 +68,13 @@ export default function CareSettings() {
             <span className="small muted">Restore the original synthetic demo data and reset the clock.</span>
             <button className="btn danger" onClick={() => setConfirmReset(true)}>Reset demo data</button>
           </div>
+        </div>
+      </section>}
+
+      <section className="card">
+        <div className="card-head"><div><h2>System</h2></div></div>
+        <div className="card-body stack-sm">
+          <div className="small muted">Payments: <b>USDC on {meta.chain.name}</b>{meta.sponsorGas ? ' · network fees sponsored' : ' · coordinators need a little ETH for network fees'}</div>
           <div className="small muted">AI mode: <b>{meta.aiMode === 'claude' ? 'Claude (live)' : 'Built-in rule-based analyzer'}</b>{meta.aiMode !== 'claude' && ' — set ANTHROPIC_API_KEY on the server to use Claude for request analysis.'}</div>
         </div>
       </section>

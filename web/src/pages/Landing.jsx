@@ -16,7 +16,7 @@ export default function Landing() {
           </nav>
           <div className="l-nav-right">
             <Link to="/login" className="btn sm">Sign in</Link>
-            <Link to="/login" className="round-btn" aria-label="Open the demo"><Icon name="arrow" /></Link>
+            <Link to="/login" className="round-btn" aria-label="Get started"><Icon name="arrow" /></Link>
           </div>
         </div>
       </header>
@@ -47,7 +47,7 @@ export default function Landing() {
                 <div className="row"><span className="badge ok"><Icon name="check" size={11} />Help was useful</span></div>
               </div>
             </div>
-            <Link to="/login" className="hero-cta">Try the<br />demo</Link>
+            <Link to="/login" className="hero-cta">Get<br />started</Link>
           </div>
           <span className="hero-word r">answered</span>
           <span className="branch" aria-hidden />
@@ -135,11 +135,11 @@ export default function Landing() {
         <h2 className="l-title">One network,<br /><em>three</em> kinds of care.</h2>
         <div className="roles">
           <div className="role"><span className="ri">🙋</span><h3>Members</h3><p>Ask for help without the whole church knowing.</p>
-            <ul><li>Simple, private request form</li><li>See status: pending → resolved</li><li>One optional “was it useful?” check-in</li></ul></div>
+            <ul><li>Simple, private request form</li><li>See status: pending → resolved</li><li>Financial help paid to your own wallet</li></ul></div>
           <div className="role"><span className="ri">🤝</span><h3>Volunteers</h3><p>Clear, need-to-know assignments, never overloaded.</p>
-            <ul><li>Accept or decline in one tap</li><li>Contact details only after accepting</li><li>Quick updates from your phone</li></ul></div>
+            <ul><li>Accept or decline in one tap</li><li>Contact details only after accepting</li><li>Reimbursed in USDC, straight to your wallet</li></ul></div>
           <div className="role"><span className="ri">🕊️</span><h3>Pastors & coordinators</h3><p>See everything in one calm place.</p>
-            <ul><li>New, aging and urgent requests</li><li>AI matches you approve or dismiss</li><li>Alerts with a recommended next step</li></ul></div>
+            <ul><li>New, aging and urgent requests</li><li>AI matches you approve or dismiss</li><li>Approve and sign every payment</li></ul></div>
         </div>
       </section>
 
@@ -157,15 +157,15 @@ export default function Landing() {
 
       <section className="cta-band">
         <h2 className="l-title">Let no ask go<br /><em>unanswered.</em></h2>
-        <p className="l-lead" style={{ margin: '18px auto 0' }}>Explore the full prototype with demo accounts for a member, a volunteer and a care coordinator.</p>
+        <p className="l-lead" style={{ margin: '18px auto 0' }}>Sign in with your email or Google. Your private account and wallet are ready in seconds.</p>
         <div className="row">
-          <Link to="/login" className="btn primary lg">Try the live demo <Icon name="arrow" /></Link>
+          <Link to="/login" className="btn primary lg">Get started <Icon name="arrow" /></Link>
           <a href="#how" className="btn lg">How it works</a>
         </div>
       </section>
 
       <footer className="l-footer">
-        <span>HaveAsk — AI Church Care Network · Prototype with synthetic demo data</span>
+        <span>HaveAsk — AI Church Care Network</span>
         <span>AI helps surface needs and suggestions. Humans make all care decisions.</span>
       </footer>
     </div>

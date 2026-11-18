@@ -46,14 +46,18 @@ const A = (input, extra) => ({ ...heuristicAnalyze(input), ...extra, source: 'de
 
 export async function seed({ quiet = false } = {}) {
   db.exec(`DELETE FROM notifications; DELETE FROM alerts; DELETE FROM feedback; DELETE FROM activity; DELETE FROM notes;
-    DELETE FROM assignments; DELETE FROM suggestions; DELETE FROM requests; DELETE FROM resources; DELETE FROM sessions;
-    DELETE FROM volunteers; DELETE FROM users; DELETE FROM settings;`);
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) setSetting(k, v);
+    DELETE FROM payments; DELETE FROM assignments; DELETE FROM suggestions; DELETE FROM requests; DELETE FROM resources;
+    DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE privy_id IS NULL);
+    DELETE FROM volunteers WHERE user_id IN (SELECT id FROM users WHERE privy_id IS NULL);
+    DELETE FROM users WHERE privy_id IS NULL;`);
+  // Real (Privy) accounts are kept; only the synthetic people and their data are replaced.
+  setSetting('clock_offset_ms', 0);
 
   const T = Date.now();
   const pw = hashPassword(DEMO_PASSWORD);
   const user = (name, email, role, area = null, phone = null) =>
-    Number(run('INSERT INTO users(name, email, password_hash, role, area, phone, created_at) VALUES (?,?,?,?,?,?,?)', name, email, pw, role, area, phone, T - 120 * DAY).lastInsertRowid);
+    get('SELECT id FROM users WHERE email = ?', email)?.id
+    ?? Number(run('INSERT INTO users(name, email, password_hash, role, area, phone, created_at) VALUES (?,?,?,?,?,?,?)', name, email, pw, role, area, phone, T - 120 * DAY).lastInsertRowid);
 
   const coord = user('Pastor Miriam Hale', 'care@haveask.demo', 'coordinator', 'Old Town', '555-0001');
   user('Rev. Samuel Osei', 'pastor@haveask.demo', 'admin', 'Old Town', '555-0002');
@@ -61,7 +65,7 @@ export async function seed({ quiet = false } = {}) {
   const V = {};
   for (const v of VOLUNTEERS) {
     const id = user(v.name, v.email, 'volunteer', v.area, `555-03${String(Object.keys(V).length + 10)}`);
-    run('INSERT INTO volunteers(user_id, skills, availability_days, availability_note, max_load, has_vehicle, bio) VALUES (?,?,?,?,?,?,?)',
+    run('INSERT OR IGNORE INTO volunteers(user_id, skills, availability_days, availability_note, max_load, has_vehicle, bio) VALUES (?,?,?,?,?,?,?)',
       id, JSON.stringify(v.skills), JSON.stringify(v.days), v.note, v.max, v.car, v.bio);
     V[v.name.split(' ')[0]] = id;
   }
@@ -244,7 +248,6 @@ export async function seed({ quiet = false } = {}) {
   const stats = runMonitor();
   if (!quiet) {
     console.log(`Seeded demo data. Monitor: ${JSON.stringify(stats)}`);
-    console.log(`Demo password for every account: ${DEMO_PASSWORD}`);
   }
 }
 

@@ -24,6 +24,9 @@ const P = {
   x: 'M18 6 6 18M6 6l12 12',
   search: 'M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.35-4.35',
   map: 'M12 22s-8-5.6-8-12a8 8 0 0 1 16 0c0 6.4-8 12-8 12zM12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+  wallet: 'M20 12V8H6a2 2 0 0 1 0-4h12v4M4 6v12a2 2 0 0 0 2 2h14v-4M18 12a2 2 0 0 0 0 4h4v-4z',
+  copy: 'M9 9h11v11H9zM5 15H4V4h11v1',
+  external: 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3',
   logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
 };
 export function Icon({ name, size = 16, stroke = 2, style }) {

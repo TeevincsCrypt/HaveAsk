@@ -57,12 +57,12 @@ function Bell() {
 }
 
 function UserMenu() {
-  const { user, setUser } = useApp();
+  const { user, signOut } = useApp();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const nav = useNavigate();
   useOutside(ref, () => setOpen(false));
-  const logout = async () => { await post('/auth/logout'); setUser(null); nav('/login'); };
+  const logout = async () => { await signOut(); nav('/'); };
   return (
     <div style={{ position: 'relative' }} ref={ref}>
       <button className="user-chip" onClick={() => setOpen((o) => !o)}>
@@ -72,6 +72,7 @@ function UserMenu() {
       {open && (
         <div className="menu-pop">
           <div style={{ padding: '6px 10px 8px' }} className="small muted">{user.email}</div>
+          <Link to="/wallet" onClick={() => setOpen(false)}><span className="row" style={{ gap: 8 }}><Icon name="wallet" />My wallet</span></Link>
           {user.role === 'volunteer' && <Link to="/volunteer/profile" onClick={() => setOpen(false)}>My volunteer profile</Link>}
           <button onClick={logout}><span className="row" style={{ gap: 8 }}><Icon name="logout" />Sign out</span></button>
         </div>
@@ -83,7 +84,7 @@ function UserMenu() {
 function DemoBanner() {
   const { meta, user, bump, now } = useApp();
   const toast = useToast();
-  if (!meta.clockOffsetMs) return null;
+  if (!meta.demoMode || !meta.clockOffsetMs) return null;
   const isCare = user.role === 'coordinator' || user.role === 'admin';
   const days = Math.round((meta.clockOffsetMs / 86_400_000) * 10) / 10;
   return (
@@ -98,7 +99,7 @@ function DemoBanner() {
 }
 
 export default function Layout({ children, narrow }) {
-  const { user, version } = useApp();
+  const { user, version, meta } = useApp();
   const isCare = user.role === 'coordinator' || user.role === 'admin';
   const [alertCount, setAlertCount] = useState(0);
   useEffect(() => {
@@ -106,10 +107,10 @@ export default function Layout({ children, narrow }) {
   }, [isCare, version]);
 
   const links = isCare
-    ? [['/care', 'Dashboard', true], ['/care/alerts', <>Alerts{alertCount > 0 && <span className="count">{alertCount}</span>}</>], ['/care/requests', 'Requests'], ['/care/volunteers', 'Volunteers'], ['/care/settings', 'Settings & demo']]
+    ? [['/care', 'Dashboard', true], ['/care/alerts', <>Alerts{alertCount > 0 && <span className="count">{alertCount}</span>}</>], ['/care/requests', 'Requests'], ['/care/payments', 'Payments'], ['/care/volunteers', 'Volunteers'], ['/care/people', 'People'], ['/care/settings', 'Settings']]
     : user.role === 'volunteer'
-      ? [['/volunteer', 'My assignments', true], ['/volunteer/profile', 'My profile']]
-      : [['/member', 'My requests', true], ['/member/new', 'Ask for help']];
+      ? [['/volunteer', 'My assignments', true], ['/wallet', 'Wallet'], ['/volunteer/profile', 'Profile']]
+      : [['/member', 'My requests', true], ['/member/new', 'Ask for help'], ['/wallet', 'Wallet']];
 
   return (
     <div className="app">
@@ -133,7 +134,7 @@ export default function Layout({ children, narrow }) {
       <footer className="footer">
         <div className="footer-inner">
           <ResponsibleAINote />
-          <span className="faint">Prototype · synthetic demo data only</span>
+          <span className="faint">{meta.demoMode ? 'Demo mode · includes synthetic data' : 'Payments: USDC on ' + meta.chain.name}</span>
         </div>
       </footer>
     </div>

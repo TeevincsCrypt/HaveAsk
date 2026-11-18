@@ -141,12 +141,45 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS payments (
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER REFERENCES requests(id) ON DELETE SET NULL,
+  assignment_id INTEGER REFERENCES assignments(id) ON DELETE SET NULL,
+  payee_id INTEGER NOT NULL REFERENCES users(id),
+  kind TEXT NOT NULL CHECK (kind IN ('financial_help','reimbursement','service')),
+  amount_micro INTEGER NOT NULL CHECK (amount_micro > 0),
+  note TEXT,
+  status TEXT NOT NULL CHECK (status IN ('requested','approved','submitted','confirmed','failed','declined','cancelled')),
+  requested_by INTEGER REFERENCES users(id),
+  approved_by INTEGER REFERENCES users(id),
+  payee_address TEXT,
+  payer_address TEXT,
+  chain_id INTEGER NOT NULL,
+  token_address TEXT NOT NULL,
+  tx_hash TEXT UNIQUE,
+  error TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  confirmed_at INTEGER
+);
 CREATE INDEX IF NOT EXISTS idx_requests_member ON requests(member_id);
+CREATE INDEX IF NOT EXISTS idx_payments_payee ON payments(payee_id);
+CREATE INDEX IF NOT EXISTS idx_payments_req ON payments(request_id);
 CREATE INDEX IF NOT EXISTS idx_assign_req ON assignments(request_id);
 CREATE INDEX IF NOT EXISTS idx_assign_vol ON assignments(volunteer_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_req ON alerts(request_id);
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
 `);
+
+// Lightweight migrations for databases created before Privy sign-in existed.
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+for (const [col, ddl] of [
+  ['privy_id', 'ALTER TABLE users ADD COLUMN privy_id TEXT'],
+  ['wallet_address', 'ALTER TABLE users ADD COLUMN wallet_address TEXT'],
+  ['onboarded', 'ALTER TABLE users ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 1'],
+  ['volunteer_status', 'ALTER TABLE users ADD COLUMN volunteer_status TEXT'],
+]) if (!userCols.includes(col)) db.exec(ddl);
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_privy ON users(privy_id) WHERE privy_id IS NOT NULL');
 
 export const all = (sql, ...p) => db.prepare(sql).all(...p);
 export const get = (sql, ...p) => db.prepare(sql).get(...p);
@@ -178,6 +211,7 @@ export const DEFAULT_SETTINGS = {
   member_followup_days: 2,     // nobody has contacted the member yet
   offer_response_hours: 48,    // volunteer hasn't accepted/declined
   reminder_cooldown_days: 3,   // gentle reminders: at most one per assignment per N days
+  payment_max_usdc: 500,       // largest single payment a coordinator can send
 };
 
 export function getSettings() {
