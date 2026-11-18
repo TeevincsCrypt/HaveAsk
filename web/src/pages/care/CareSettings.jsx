@@ -53,7 +53,7 @@ export default function CareSettings() {
         </div>
       </section>
 
-      <section className="card" style={{ borderColor: '#c9c6e0' }}>
+      <section className="card">
         <div className="card-head"><div><h2 className="row" style={{ gap: 8 }}><Icon name="clock" />Demo controls</h2><p>Simulate time passing to show the monitor flagging requests that go quiet.</p></div></div>
         <div className="card-body stack">
           <div className="small">Demo clock: <b>{fmtDate(now)}</b>{meta.clockOffsetMs ? ` (${Math.round(meta.clockOffsetMs / 8.64e6) / 10} days ahead of real time)` : ' (real time)'}</div>

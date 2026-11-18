@@ -35,7 +35,7 @@ export default function CareVolunteers() {
               <div className="row" style={{ gap: 6 }}>{v.skills.map((s) => <span key={s} className="badge neutral">{CAT_ICON[s]} {meta.categories[s]}</span>)}</div>
               <div className="row small muted" style={{ gap: 8 }}>
                 <span className="row" style={{ gap: 2 }}>{meta.days.map((d) => (
-                  <span key={d} style={{ width: 20, height: 20, borderRadius: 4, display: 'inline-grid', placeItems: 'center', fontSize: 11, fontWeight: 700, background: v.availability_days.includes(d) ? 'var(--primary-soft)' : '#f0ede7', color: v.availability_days.includes(d) ? 'var(--primary)' : 'var(--text-3)' }}>{DAY_LABEL[d]}</span>
+                  <span key={d} style={{ width: 20, height: 20, borderRadius: 4, display: 'inline-grid', placeItems: 'center', fontSize: 11, fontWeight: 700, background: v.availability_days.includes(d) ? 'var(--primary-soft)' : 'var(--surface-2)', color: v.availability_days.includes(d) ? 'var(--primary)' : 'var(--text-3)' }}>{DAY_LABEL[d]}</span>
                 ))}</span>
                 <span>{v.availability_note}</span>
               </div>

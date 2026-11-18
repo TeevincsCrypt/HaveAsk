@@ -4,6 +4,7 @@ import { api } from './api.js';
 import { AppCtx } from './context.js';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
+import Landing from './pages/Landing.jsx';
 import MemberHome from './pages/member/MemberHome.jsx';
 import NewRequest from './pages/member/NewRequest.jsx';
 import MemberRequest from './pages/member/MemberRequest.jsx';
@@ -57,7 +58,7 @@ export default function App() {
     <AppCtx.Provider value={ctx}>
       <Routes>
         <Route path="/login" element={user ? <Navigate to={homeFor(user.role)} replace /> : <Login />} />
-        <Route path="/" element={<Navigate to={user ? homeFor(user.role) : '/login'} replace />} />
+        <Route path="/" element={user ? <Navigate to={homeFor(user.role)} replace /> : <Landing />} />
 
         <Route path="/member" element={wrap(['member'], <MemberHome />, true)} />
         <Route path="/member/new" element={wrap(['member'], <NewRequest />, true)} />

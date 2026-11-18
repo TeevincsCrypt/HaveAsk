@@ -117,8 +117,8 @@ export default function Layout({ children, narrow }) {
       <header className="topbar">
         <div className="topbar-inner">
           <Link to="/" className="brand">
-            <span className="brand-mark"><Icon name="heart" size={17} stroke={2.2} style={{ color: 'white' }} /></span>
-            <span>HaveAsk<small>Church Care Network</small></span>
+            <span className="brand-mark"><Icon name="heart" size={15} /></span>
+            <span>HaveAsk<sup>©</sup><small>Church Care Network</small></span>
           </Link>
           <nav className="nav">
             {links.map(([to, label, end]) => <NavLink key={to} to={to} end={end}>{label}</NavLink>)}

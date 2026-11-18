@@ -57,7 +57,7 @@ function Item({ a, meta, now }) {
   const quiet = now - a.last_update_at;
   const nudge = ['accepted', 'contacted', 'helping'].includes(a.status) && quiet > 3 * 86_400_000;
   return (
-    <Link to={`/volunteer/assignments/${a.id}`} className="req-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+    <Link to={`/volunteer/assignments/${a.id}`} className="req-row simple">
       <div>
         <div className="title"><Category cat={a.category} meta={meta} /><Urgency level={a.urgency} />{a.area && <span className="tiny faint row" style={{ gap: 3 }}><Icon name="map" size={12} />{a.area}</span>}</div>
         <div className="sum">{a.brief}</div>

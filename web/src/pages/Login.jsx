@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { post } from '../api.js';
 import { useApp } from '../context.js';
 import { homeFor } from '../App.jsx';
@@ -41,11 +41,8 @@ export default function Login() {
     <div className="auth-wrap">
       <aside className="auth-side">
         <div>
-          <div className="row" style={{ gap: 10 }}>
-            <span className="brand-mark" style={{ background: 'rgba(255,255,255,0.15)' }}><Icon name="heart" size={17} style={{ color: 'white' }} /></span>
-            <b style={{ color: 'white', fontSize: 17 }}>HaveAsk</b>
-          </div>
-          <h1>No request for help should quietly disappear.</h1>
+          <Link to="/" className="brand"><span className="brand-mark"><Icon name="heart" size={15} /></span>HaveAsk<sup>©</sup></Link>
+          <h1>No ask should quietly <em>disappear.</em></h1>
           <p>A private, caring way for church members to ask for practical help — and for your care team to make sure every request is followed through.</p>
           <div className="auth-points">
             <div><span className="i"><Icon name="lock" /></span><span><b>Private by default</b>Only the care coordinator and the assigned volunteer ever see a request.</span></div>
@@ -53,15 +50,15 @@ export default function Login() {
             <div><span className="i"><Icon name="bell" /></span><span><b>Nothing slips through</b>Requests at risk of being forgotten are flagged with a clear next step.</span></div>
           </div>
         </div>
-        <p className="small" style={{ color: '#a9cbc5' }}>
+        <p className="small muted">
           <ResponsibleAINote compact />
         </p>
       </aside>
 
       <main className="auth-main">
-        <div className="auth-card stack">
+        <div className="auth-card card stack">
           <div>
-            <h1 style={{ fontSize: 26 }}>{mode === 'login' ? 'Welcome back' : 'Create a member account'}</h1>
+            <h1>{mode === 'login' ? 'Welcome back' : 'Create a member account'}</h1>
             <p className="muted" style={{ marginTop: 4 }}>{mode === 'login' ? 'Sign in to HaveAsk.' : 'So you can privately ask for help and see updates.'}</p>
           </div>
 

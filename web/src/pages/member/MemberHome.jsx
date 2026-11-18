@@ -47,7 +47,7 @@ export default function MemberHome() {
 
 function RequestItem({ r, meta, now }) {
   return (
-    <Link to={`/member/requests/${r.id}`} className="req-row" style={{ gridTemplateColumns: 'minmax(0,1fr) auto' }}>
+    <Link to={`/member/requests/${r.id}`} className="req-row simple">
       <div>
         <div className="title"><Category cat={r.category} meta={meta} /></div>
         <div className="sum">{r.description}</div>
